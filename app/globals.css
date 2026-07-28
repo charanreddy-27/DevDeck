@@ -13,8 +13,9 @@
   --border-strong: #2f3a49;
 
   --text: #e6ebf2;
-  --muted: #8a94a6;
-  --faint: #5f6b7d;
+  --muted: #8a94a6; /* 6.2:1 on --bg */
+  /* was #5f6b7d — 3.4:1, below WCAG AA for the small text this is used on */
+  --faint: #7c879a; /* 5.2:1 on --bg */
 
   --ready: #3fb950;
   --building: #d29922;
