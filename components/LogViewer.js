@@ -27,22 +27,32 @@ export default function LogViewer({ deploymentId, state }) {
 
   const live = state === 'BUILDING' || state === 'QUEUED';
 
+  // `loading` starts true and only a Retry turns it back on, so the first
+  // fetch and the silent tail polls never flash the skeleton.
   const load = useCallback(
-    async ({ silent = false } = {}) => {
-      if (!silent) setLoading(true);
-      try {
-        const data = await fetchJson(`/api/vercel/logs?deploymentId=${encodeURIComponent(deploymentId)}`);
-        setLines(data.lines || []);
-        setError(null);
-      } catch (err) {
-        // A failed tail poll should not blow away logs already on screen.
-        if (!silent) setError(err);
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
+    ({ silent = false } = {}) =>
+      fetchJson(`/api/vercel/logs?deploymentId=${encodeURIComponent(deploymentId)}`)
+        .then(
+          (data) => {
+            setLines(data.lines || []);
+            setError(null);
+          },
+          (err) => {
+            // A failed tail poll should not blow away logs already on screen.
+            if (!silent) setError(err);
+          },
+        )
+        .finally(() => {
+          if (!silent) setLoading(false);
+        }),
     [deploymentId],
   );
+
+  function retry() {
+    setLoading(true);
+    setError(null);
+    load();
+  }
 
   useEffect(() => {
     pinnedRef.current = true;
@@ -151,7 +161,7 @@ export default function LogViewer({ deploymentId, state }) {
 
       {error ? (
         <div style={{ padding: 14 }}>
-          <ErrorBanner error={error} onRetry={() => load()} />
+          <ErrorBanner error={error} onRetry={retry} />
         </div>
       ) : null}
 

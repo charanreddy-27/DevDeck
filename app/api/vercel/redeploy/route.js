@@ -1,6 +1,6 @@
-import { ApiError, badRequest, errorResponse } from '@/lib/errors';
-import { normalizeState } from '@/lib/normalize';
-import { vercelFetch } from '@/lib/vercel';
+import { badRequest } from '@/lib/errors';
+import { getSource } from '@/lib/source';
+import { readJson, respond, respondError } from '@/lib/source/respond';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,57 +8,19 @@ export const dynamic = 'force-dynamic';
 /**
  * POST /api/vercel/redeploy  { projectId }
  *
- * Looks the project's git link up server-side (the client never supplies the
- * repo id) and triggers a fresh production build from the production branch.
+ * The provider looks the project's git link up server-side — the client never
+ * supplies the repo id — and rebuilds the production branch.
  */
 export async function POST(request) {
+  const source = getSource(request);
   try {
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      throw badRequest('Expected a JSON body of { projectId }.');
-    }
+    const body = await readJson(request, badRequest('Expected a JSON body of { projectId }.'));
 
     const projectId = body?.projectId;
     if (!projectId) throw badRequest('projectId is required.');
 
-    const project = await vercelFetch(`/v9/projects/${encodeURIComponent(projectId)}`);
-    const link = project?.link;
-
-    if (!link || link.type !== 'github' || !link.repoId) {
-      throw new ApiError('This project has no connected GitHub repository.', {
-        status: 400,
-        code: 'bad_request',
-        service: 'vercel',
-        hint: 'Connect a GitHub repo to the project in Vercel, then redeploy from here.',
-      });
-    }
-
-    const deployment = await vercelFetch('/v13/deployments', {
-      method: 'POST',
-      body: {
-        name: project.name,
-        project: project.id,
-        target: 'production',
-        gitSource: {
-          type: 'github',
-          repoId: link.repoId,
-          ref: link.productionBranch || 'main',
-        },
-      },
-    });
-
-    return Response.json({
-      deployment: {
-        id: deployment?.id || deployment?.uid || null,
-        state: normalizeState(deployment?.readyState ?? deployment?.status ?? 'QUEUED'),
-        url: deployment?.url ? `https://${deployment.url}` : null,
-        inspectorUrl: deployment?.inspectorUrl || null,
-        branch: link.productionBranch || 'main',
-      },
-    });
+    return respond(source, { deployment: await source.redeploy(projectId) });
   } catch (error) {
-    return errorResponse(error);
+    return respondError(source, error);
   }
 }

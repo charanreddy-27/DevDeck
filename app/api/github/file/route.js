@@ -1,18 +1,13 @@
-import { ApiError, badRequest, errorResponse } from '@/lib/errors';
-import { decodeBase64, encodeBase64, encodePath, githubFetch } from '@/lib/github';
+import { badRequest } from '@/lib/errors';
+import { getSource } from '@/lib/source';
+import { readJson, respond, respondError } from '@/lib/source/respond';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const MAX_BYTES = 1024 * 1024;
-const NUL = String.fromCharCode(0);
-
-function contentsPath(owner, repo, path) {
-  return `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodePath(path)}`;
-}
-
-/** GET /api/github/file?owner=&repo=&path=&ref= */
+/** GET /api/github/file?owner=&repo=&path=&ref= → decoded UTF-8 content + blob sha (binary content withheld). */
 export async function GET(request) {
+  const source = getSource(request);
   const { searchParams } = new URL(request.url);
   const owner = searchParams.get('owner');
   const repo = searchParams.get('repo');
@@ -22,32 +17,9 @@ export async function GET(request) {
   try {
     if (!owner || !repo || !path) throw badRequest('owner, repo and path are required.');
 
-    const file = await githubFetch(contentsPath(owner, repo, path), { query: { ref } });
-
-    if (Array.isArray(file)) throw badRequest('That path is a directory, not a file.');
-    if ((file?.size ?? 0) > MAX_BYTES) {
-      throw new ApiError('File is larger than 1 MB and cannot be edited in DevDeck.', {
-        status: 413,
-        code: 'bad_request',
-        service: 'github',
-        hint: 'Edit large files locally and push with git.',
-      });
-    }
-
-    const decoded = file?.content ? decodeBase64(file.content) : '';
-    // A NUL byte anywhere is the cheap, reliable "this is not text" signal.
-    const binary = decoded.includes(NUL);
-
-    return Response.json({
-      path: file?.path || path,
-      sha: file?.sha || null,
-      size: file?.size ?? decoded.length,
-      binary,
-      content: binary ? '' : decoded,
-      url: file?.html_url || null,
-    });
+    return respond(source, await source.getFile(owner, repo, path, ref));
   } catch (error) {
-    return errorResponse(error);
+    return respondError(source, error);
   }
 }
 
@@ -55,17 +27,14 @@ export async function GET(request) {
  * PUT /api/github/file
  * { owner, repo, path, branch, message, content, sha }
  *
- * `content` arrives as plain UTF-8 text and is base64-encoded here — the client
- * never has to deal with encoding.
+ * `content` arrives as plain UTF-8 text; the provider handles encoding. The
+ * sha is mandatory: a stale one is rejected with 409 `conflict`, never
+ * force-overwritten.
  */
 export async function PUT(request) {
+  const source = getSource(request);
   try {
-    let body;
-    try {
-      body = await request.json();
-    } catch {
-      throw badRequest('Expected a JSON body.');
-    }
+    const body = await readJson(request, badRequest('Expected a JSON body.'));
 
     const { owner, repo, path, branch, message, content, sha } = body || {};
     if (!owner || !repo || !path) throw badRequest('owner, repo and path are required.');
@@ -73,30 +42,10 @@ export async function PUT(request) {
     if (typeof content !== 'string') throw badRequest('content must be a string.');
 
     const commitMessage = (message || '').trim() || `Update ${path}`;
+    const result = await source.putFile({ owner, repo, path, branch, message: commitMessage, content, sha });
 
-    const result = await githubFetch(contentsPath(owner, repo, path), {
-      method: 'PUT',
-      body: {
-        message: commitMessage,
-        content: encodeBase64(content),
-        sha,
-        branch: branch || undefined,
-      },
-    });
-
-    return Response.json({
-      commit: {
-        sha: result?.commit?.sha || null,
-        url: result?.commit?.html_url || null,
-        message: commitMessage,
-      },
-      file: {
-        path: result?.content?.path || path,
-        sha: result?.content?.sha || null,
-        size: result?.content?.size ?? null,
-      },
-    });
+    return respond(source, result);
   } catch (error) {
-    return errorResponse(error);
+    return respondError(source, error);
   }
 }

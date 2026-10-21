@@ -6,6 +6,8 @@ export const metadata = {
   title: 'Project',
 };
 
-export default function ProjectPage({ params }) {
-  return <ProjectDetail projectId={params.id} />;
+// Next.js 15+ passes params as a Promise; synchronous access was removed in 16.
+export default async function ProjectPage({ params }) {
+  const { id } = await params;
+  return <ProjectDetail projectId={id} />;
 }

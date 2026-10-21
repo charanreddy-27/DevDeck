@@ -2,7 +2,11 @@ import Link from 'next/link';
 import './globals.css';
 import { ToastProvider } from '@/components/ToastProvider';
 import NavLinks from '@/components/NavLinks';
+import { DemoBanner, SignOutButton } from '@/components/ShellStatus';
+import CommandPalette, { PaletteButton } from '@/components/CommandPalette';
+import ThemeToggle from '@/components/ThemeToggle';
 import { profile, project } from '@/lib/profile';
+import { THEME_BOOT } from '@/lib/theme';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://devdeck.charanreddy.dev';
 const TITLE = `${project.name} — ${project.tagline}`;
@@ -50,15 +54,24 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: '#0e1116',
+  themeColor: [
+    { media: '(prefers-color-scheme: dark)', color: '#0e1116' },
+    { media: '(prefers-color-scheme: light)', color: '#f6f8fb' },
+  ],
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    // suppressHydrationWarning: THEME_BOOT sets data-theme before React hydrates.
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* A plain stylesheet link, not next/font: next/font downloads the font at
+            build time, and the build must pass with no network or env. The rule
+            below targets the Pages Router's per-page fonts, which this is not. */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap"
           rel="stylesheet"
@@ -76,12 +89,20 @@ export default function RootLayout({ children }) {
 
             <div className="topbar-spacer" />
 
+            <PaletteButton />
+
             <div className="topbar-meta">
-              <a href={profile.url} target="_blank" rel="noreferrer" className="link-chip">
+              <a href={profile.url} target="_blank" rel="noreferrer" className="link-chip hide-sm">
                 {profile.firstName.toLowerCase()}reddy.dev &#8599;
               </a>
+              <ThemeToggle />
+              <SignOutButton />
             </div>
           </header>
+
+          <CommandPalette />
+
+          <DemoBanner />
 
           <main className="shell">{children}</main>
 

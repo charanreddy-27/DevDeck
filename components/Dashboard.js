@@ -6,6 +6,7 @@ import SetupGuide from './SetupGuide';
 import ErrorBanner from './ErrorBanner';
 import EmptyState from './EmptyState';
 import { GridSkeleton } from './Skeletons';
+import { InsightsStrip } from './Insights';
 import { fetchJson, isTokenProblem } from '@/lib/client';
 import { relativeTime } from '@/lib/format';
 
@@ -20,6 +21,7 @@ const FILTERS = [
 
 export default function Dashboard() {
   const [projects, setProjects] = useState(null);
+  const [activity, setActivity] = useState(null);
   const [error, setError] = useState(null);
   const [fetchedAt, setFetchedAt] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -28,30 +30,40 @@ export default function Dashboard() {
   const [, setTick] = useState(0);
   const searchRef = useRef(null);
 
-  const load = useCallback(async ({ silent = false } = {}) => {
-    if (silent) setRefreshing(true);
-    try {
-      const data = await fetchJson('/api/vercel/projects');
-      setProjects(data.projects || []);
-      setFetchedAt(data.fetchedAt || Date.now());
-      setError(null);
-    } catch (err) {
-      setError(err);
-      // Keep the last good data on screen when a background poll fails.
-      if (!silent) setProjects(null);
-    } finally {
-      setRefreshing(false);
-    }
+  const load = useCallback(({ silent = false } = {}) => {
+    // Activity rides along with every poll. It is a nice-to-have: if it fails,
+    // the insights strip keeps its last numbers and the grid is unaffected.
+    fetchJson('/api/vercel/activity').then(setActivity, () => {});
+    return fetchJson('/api/vercel/projects')
+      .then(
+        (data) => {
+          setProjects(data.projects || []);
+          setFetchedAt(data.fetchedAt || Date.now());
+          setError(null);
+        },
+        (err) => {
+          setError(err);
+          // Keep the last good data on screen when a background poll fails.
+          if (!silent) setProjects(null);
+        },
+      )
+      .finally(() => setRefreshing(false));
   }, []);
+
+  // A background refresh: the grid stays put and the toolbar says "syncing".
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    return load({ silent: true });
+  }, [load]);
 
   // Initial load + 30s poll. Skips polling while the tab is hidden.
   useEffect(() => {
     load();
     const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') load({ silent: true });
+      if (document.visibilityState === 'visible') refresh();
     }, POLL_MS);
     return () => clearInterval(interval);
-  }, [load]);
+  }, [load, refresh]);
 
   // Keeps "updated Xs ago" honest between polls.
   useEffect(() => {
@@ -197,17 +209,19 @@ export default function Dashboard() {
           ) : null}
         </span>
 
-        <button type="button" className="btn btn-sm" onClick={() => load({ silent: true })} disabled={refreshing}>
+        <button type="button" className="btn btn-sm" onClick={refresh} disabled={refreshing}>
           Refresh
         </button>
       </div>
+
+      {!error || projects ? <InsightsStrip activity={activity} projects={projects} /> : null}
 
       {loading ? <GridSkeleton /> : null}
 
       {!loading && visible.length > 0 ? (
         <div className="grid">
           {visible.map((project) => (
-            <ProjectCard key={project.id} project={project} />
+            <ProjectCard key={project.id} project={project} recent={activity?.summary?.byProject?.[project.id]?.recent} />
           ))}
         </div>
       ) : null}

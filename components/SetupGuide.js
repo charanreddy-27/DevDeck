@@ -1,12 +1,31 @@
 'use client';
 
+import { useState } from 'react';
+import { useToast } from './ToastProvider';
+import { fetchJson, hardNavigate } from '@/lib/client';
+
 /**
  * Shown instead of the dashboard whenever a token is missing or rejected —
- * the first-run experience is the setup guide itself.
+ * the first-run experience is the setup guide itself. With no tokens at all,
+ * it also offers the demo: simulated data, so a visitor can try every feature
+ * without connecting an account.
  */
 export default function SetupGuide({ error }) {
+  const toast = useToast();
+  const [starting, setStarting] = useState(false);
   const service = error?.service;
   const missing = error?.code === 'missing_token';
+
+  async function exploreDemo() {
+    setStarting(true);
+    try {
+      await fetchJson('/api/demo', { method: 'POST' });
+      hardNavigate('/');
+    } catch (err) {
+      setStarting(false);
+      toast.error(err.hint ? `${err.message} ${err.hint}` : err.message);
+    }
+  }
 
   return (
     <div className="setup">
@@ -26,6 +45,28 @@ export default function SetupGuide({ error }) {
             {error?.message || 'DevDeck needs a Vercel token and a GitHub token to talk to your accounts.'}
             {error?.hint ? ` ${error.hint}` : ''}
           </p>
+
+          {missing ? (
+            <div className="demo-cta">
+              <div>
+                <div className="demo-cta-title">Just looking?</div>
+                <div className="demo-cta-sub">
+                  Explore DevDeck with simulated projects — live builds, logs, redeploys and commits. Nothing connects to
+                  a real account.
+                </div>
+              </div>
+              <button type="button" className="btn btn-primary" onClick={exploreDemo} disabled={starting}>
+                {starting ? (
+                  <>
+                    <span className="spinner" aria-hidden="true" />
+                    Starting demo
+                  </>
+                ) : (
+                  'Explore the live demo'
+                )}
+              </button>
+            </div>
+          ) : null}
 
           <ol className="setup-steps">
             <li>

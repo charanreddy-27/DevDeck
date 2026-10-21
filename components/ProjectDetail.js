@@ -31,15 +31,22 @@ export default function ProjectDetail({ projectId }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [deployments, setDeployments] = useState([]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(
+    () =>
+      fetchJson(`/api/vercel/projects?id=${encodeURIComponent(projectId)}`).then(
+        (data) => {
+          setProject(data.project);
+          setError(null);
+        },
+        (err) => setError(err),
+      ),
+    [projectId],
+  );
+
+  function retry() {
     setError(null);
-    try {
-      const data = await fetchJson(`/api/vercel/projects?id=${encodeURIComponent(projectId)}`);
-      setProject(data.project);
-    } catch (err) {
-      setError(err);
-    }
-  }, [projectId]);
+    load();
+  }
 
   useEffect(() => {
     load();
@@ -80,7 +87,7 @@ export default function ProjectDetail({ projectId }) {
         <Link href="/" className="back-link">
           &#8592; All projects
         </Link>
-        <ErrorBanner error={error} onRetry={load} />
+        <ErrorBanner error={error} onRetry={retry} />
       </>
     );
   }

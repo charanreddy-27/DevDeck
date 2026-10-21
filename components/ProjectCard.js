@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import StatusPill, { statusModifier } from './StatusPill';
+import { OutcomeStrip } from './Insights';
 import { cx, hostOf, relativeTime } from '@/lib/format';
 
-export default function ProjectCard({ project }) {
+export default function ProjectCard({ project, recent }) {
   const repo = project.repo;
 
   return (
@@ -37,7 +38,10 @@ export default function ProjectCard({ project }) {
       ) : null}
 
       <div className="card-foot">
-        <StatusPill status={project.status} />
+        <div className="card-status">
+          <StatusPill status={project.status} />
+          <OutcomeStrip recent={recent} />
+        </div>
         <div className="card-meta" style={{ gap: 12 }}>
           <span title={project.lastDeployedAt ? new Date(project.lastDeployedAt).toLocaleString() : ''}>
             {project.lastDeployedAt ? relativeTime(project.lastDeployedAt) : 'never deployed'}

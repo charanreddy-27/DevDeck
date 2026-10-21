@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StatusPill, { statusClass } from './StatusPill';
 import LogViewer from './LogViewer';
+import { DeploymentStats } from './Insights';
 import ErrorBanner from './ErrorBanner';
 import EmptyState from './EmptyState';
 import { RowsSkeleton } from './Skeletons';
@@ -21,16 +22,18 @@ export default function DeploymentsTab({ projectId, hasRepo, refreshKey, onDeplo
   const [confirming, setConfirming] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const data = await fetchJson(`/api/vercel/deployments?projectId=${encodeURIComponent(projectId)}`);
-      setDeployments(data.deployments || []);
-      setError(null);
-      onDeploymentsChange?.(data.deployments || []);
-    } catch (err) {
-      setError(err);
-    }
-  }, [projectId, onDeploymentsChange]);
+  const load = useCallback(
+    () =>
+      fetchJson(`/api/vercel/deployments?projectId=${encodeURIComponent(projectId)}`).then(
+        (data) => {
+          setDeployments(data.deployments || []);
+          setError(null);
+          onDeploymentsChange?.(data.deployments || []);
+        },
+        (err) => setError(err),
+      ),
+    [projectId, onDeploymentsChange],
+  );
 
   useEffect(() => {
     load();
@@ -126,6 +129,8 @@ export default function DeploymentsTab({ projectId, hasRepo, refreshKey, onDeplo
           <ErrorBanner error={error} onRetry={load} />
         </div>
       ) : null}
+
+      {!loading && deployments && deployments.length > 0 ? <DeploymentStats deployments={deployments} /> : null}
 
       {loading ? <RowsSkeleton /> : null}
 
