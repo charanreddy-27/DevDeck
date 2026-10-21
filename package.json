@@ -1,6 +1,6 @@
 {
   "name": "devdeck",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Mission control for every GitHub project you ship on Vercel.",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --test \"tests/*.test.mjs\""
+    "test": "node --test \"tests/*.test.mjs\"",
+    "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {
     "next": "^16.4.2",

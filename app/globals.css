@@ -733,6 +733,9 @@ kbd {
   border-radius: 999px;
   background: var(--panel);
   color: var(--muted);
+  /* Its own font, so a chip looks the same in a header, a panel or a row. */
+  font-family: var(--mono);
+  font-size: 12px;
 }
 .link-chip:hover {
   color: var(--accent);
