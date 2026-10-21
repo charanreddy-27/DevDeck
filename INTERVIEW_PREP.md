@@ -13,8 +13,8 @@ Rehearsal material. Read §1 and §2 out loud until they're yours, then skim §4
 >
 > So DevDeck shows every project with a live status, and gives you the three things you reach for
 > when the status is bad: the build log, a redeploy button, and an editor that commits a fix
-> straight to GitHub. Next.js 14, no database, everything proxied through route handlers so the
-> browser never touches a token.
+> straight to GitHub. Next.js 16, no database, an optional password in front of everything, and
+> every API call proxied through route handlers so the browser never touches a token.
 
 Land on the last clause. It's the part that says "I think about security boundaries."
 
@@ -25,12 +25,15 @@ Land on the last clause. It's the part that says "I think about security boundar
 > drift. Months later I can't tell you which ones are still healthy without opening a dozen tabs.
 > DevDeck answers that in one screen.
 
-**Then the shape (~30s).**
-> It's Next.js 14, App Router, JavaScript. Three pages and seven route handlers. No database —
+**Then the shape (~40s).**
+> It's Next.js 16, App Router, JavaScript. Five pages and a dozen route handlers. No database —
 > everything's a live read of the Vercel and GitHub REST APIs. The important structural decision
 > is that every external call goes through a route handler. The browser only ever talks to my
 > app. That kills CORS, keeps tokens out of the client bundle entirely, and gives me one place to
 > normalise two APIs that disagree about everything.
+>
+> That one choke point is also where version 2 plugged in. The demo mode is a second data
+> provider behind the same routes, and the password gate is one check in front of them.
 
 **Then the feature that's actually clever (~40s).**
 > The part I like most is the edit-to-deploy flow. You browse the repo file tree, edit a file,
@@ -51,9 +54,9 @@ Land on the last clause. It's the part that says "I think about security boundar
 > pinning that exact string now.
 
 **Close (~10s).**
-> 34 tests over the parsing and normalising, zero test dependencies — `node:test`. And the whole
-> thing is deliberately narrow: it doesn't manage infrastructure or replace Vercel. It answers
-> one question fast.
+> 91 tests — the parsing and normalising, plus the demo simulation, session signing and the diff —
+> with zero test dependencies, just `node:test`. And the whole thing is deliberately narrow: it
+> doesn't manage infrastructure or replace Vercel. It answers one question fast.
 
 ## 3. STAR stories
 
@@ -156,11 +159,12 @@ would be actively annoying.
 > than one contributor, I'd take TypeScript.
 
 **"How would you scale this to a team?"**
-> Three things change. Auth becomes mandatory — right now anyone who reaches a deployed instance
-> can redeploy your projects and commit to your repos, which is why it's a local tool and why
-> that's in bold in the deployment doc. Second, polling becomes webhooks, because N users polling
-> every 30 seconds hits rate limits fast. Third, I'd add a short-TTL shared cache so one user's
-> refresh serves everyone's.
+> Three things change. Auth becomes real accounts. There's a password gate now, but it's one
+> shared password with stateless sessions — right for one person protecting their own tokens,
+> wrong for a team that needs to know who committed what. Second, polling becomes webhooks,
+> because N users polling every 30 seconds hits rate limits fast. Third, I'd add a short-TTL
+> shared cache so one user's refresh serves everyone's, and move the login throttle out of
+> per-instance memory into the same store.
 
 **"What's the weakest part of the code?"**
 > The production-URL heuristic. A deployment's `alias` array holds every domain pointing at it,
@@ -173,22 +177,67 @@ would be actively annoying.
 > Two checks. No client component imports the API clients — that's grep-able and it's clean. And
 > I scanned the built output and served HTML for the token strings after running with real values
 > in env; nothing. Plus `scrub()` removes them from error messages before those become responses
-> or logs.
+> or logs — and since v2 it scrubs the password and session secret too.
 
 **"What did you test, and what didn't you?"**
-> 34 unit tests over the pure logic — normalising, formatting, encoding, log parsing, scrubbing.
-> Error paths were exercised over HTTP against both dev and production servers. What I didn't
-> test end-to-end is the authenticated round-trip against real accounts, because that needs live
-> tokens. I'd rather say that than imply coverage I don't have.
+> 91 tests, all `node:test`, no network. The pure logic — normalising, formatting, encoding, log
+> parsing, scrubbing — plus the live/demo mode rules, the demo simulation, session signing and
+> expiry, the login throttle, activity aggregation, the diff and the fuzzy ranking. The live
+> provider runs against a mocked fetch, which pins the 409 mapping and the file limits. What I
+> didn't test end-to-end is the authenticated round-trip against real accounts, because that needs
+> live tokens, and there are no component tests. I'd rather say that than imply coverage I don't
+> have.
+
+**"Why a data-source layer for the demo, instead of just mocking fetch?"**
+> Because the demo runs in production, on a public URL. A fetch mock is a test tool — ship one and
+> the only thing between a visitor and my real accounts is whether an interceptor got installed.
+> Here the server picks a provider per request, and the demo provider has no `fetch` in it at all;
+> a test makes `fetch` throw and runs every method to prove it. The demo is also stateful: a commit
+> changes the file and starts a build that progresses with the clock. Fake HTTP responses would
+> have to model all of that anyway, so I'd be writing a provider with an extra serialisation step.
+> What I kept from the mocking idea is shape fidelity — the demo builds raw Vercel and GitHub
+> payloads and runs them through the same normalisers and log parser as live. And for testing the
+> live provider I *do* mock fetch. That's the right tool there.
+
+**"Why an HMAC-signed cookie instead of a session store?"**
+> There's no database, and I didn't want sessions to be the reason to add one — on serverless an
+> in-memory store doesn't survive across instances, so it would have to be a real KV. And there's
+> one user. The session doesn't need to say who you are, only that you knew the password and when
+> that stops counting. So the cookie is a signed expiry: a version, a timestamp, and an HMAC-SHA256
+> over both, via Web Crypto so the same code runs in the proxy and in tests. The cost is
+> revocation. Logout clears the cookie, but a copied cookie stays valid until it expires, up to
+> seven days. The escape hatch is rotating the key: by default it's derived from the password, so
+> changing the password logs every session out. For one person protecting their own tokens, that's
+> the right trade. For a team it isn't.
+
+**"Why write your own diff, and why the cap?"**
+> It's about 150 tested lines, against a dependency for one feature. Myers because it's O(ND): cost
+> scales with the size of the edit, not the file, and the common case is a one-line fix. I trim
+> the common prefix and suffix first, so a one-line edit in a 5,000-line file is almost free. The
+> cap is for the opposite case. Paste in a whole new file and D gets huge, and Myers keeps a copy
+> of its frontier per step, so memory grows with D times the file length. Past 2,000 edits it
+> gives up and says the change is too large to show line by line, with counts. Nobody reviews a
+> 2,000-line diff before a commit anyway. The live +/− count reads a `useDeferredValue` of the
+> draft, so typing never waits on it.
+
+**"You turned on the React Compiler's lint rules. What did that actually change?"**
+> Mostly the data loaders. All six were async functions called from an effect, most of them
+> starting with `setError(null)` or `setLoading(true)`, and `set-state-in-effect` flagged every
+> one, because a synchronous state update inside an effect costs an extra render pass. I
+> rewrote them as promise chains — `fetchJson(url).then(onData, onError)` — so state only changes
+> after the response. Where a Retry has to clear an error first, that happens in the click
+> handler, which is an event, which is where it belongs. It also caught a ref written during
+> render in the editor. I didn't disable a single rule. Honest framing: nothing user-visible
+> changed. It removed extra renders and made six loaders read the same way.
 
 ## 5. What I'd improve next
 
-1. **Deployment protection.** As built, a public instance is a remote control for my entire
-   Vercel account. That's the first thing I'd fix before it's anything other than local.
+1. **Real accounts.** The password gate makes a public instance reasonable for me, but it's one
+   shared password. For anyone else it needs per-user sign-in, so you know who committed what.
 2. **Multi-file commits** through the Git Trees API — the current single-file limit means you
-   can't do a real refactor.
-3. **A diff view.** You see the file you're editing, not what changed. That's the wrong thing to
-   look at before you commit.
+   can't do a real refactor. The diff view now exists, so the review step is already there.
+3. **A shared store for the login throttle.** It's per serverless instance today: a speed bump,
+   not a wall.
 4. **Webhooks over polling**, the moment more than one person uses it.
 5. **Retry with backoff** on rate-limit responses instead of just telling the user to wait.
 
@@ -207,8 +256,10 @@ would be actively annoying.
 - **Don't oversell the scale.** It's a well-built single-user tool. Calling it a platform invites
   questions it can't survive. The craft is the story, not the scale.
 - **Don't claim metrics you don't have.** No user counts, no "reduced deploy time by X%". The
-  interesting parts are the decisions.
-- **Do volunteer the security limitation.** Saying "this can't be public without auth, and here's
-  why" reads as judgement. Being caught not knowing it reads as the opposite.
+  interesting parts are the decisions. If you demo it, don't quote the insights strip either —
+  in demo mode those numbers are simulated.
+- **Do volunteer the security limitation.** Saying "the gate is one shared password, logout can't
+  revoke a copied cookie, and the login throttle is per instance — and here's why that's fine for
+  one person" reads as judgement. Being caught not knowing it reads as the opposite.
 - **Don't say "it was easy."** The log parser wasn't. Say so — the debugging story is better
   material than the feature list.
