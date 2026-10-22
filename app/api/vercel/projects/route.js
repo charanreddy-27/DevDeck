@@ -1,6 +1,5 @@
-import { errorResponse } from '@/lib/errors';
-import { normalizeProject } from '@/lib/normalize';
-import { vercelFetch, vercelTeamId } from '@/lib/vercel';
+import { getSource } from '@/lib/source';
+import { respond, respondError } from '@/lib/source/respond';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,26 +9,18 @@ export const dynamic = 'force-dynamic';
  * GET /api/vercel/projects?id=xyz → a single project
  */
 export async function GET(request) {
+  const source = getSource(request);
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
 
   try {
     if (id) {
-      const project = await vercelFetch(`/v9/projects/${encodeURIComponent(id)}`);
-      return Response.json({ project: normalizeProject(project) });
+      return respond(source, { project: await source.getProject(id) });
     }
 
-    const data = await vercelFetch('/v9/projects', { query: { limit: 100 } });
-    const projects = (data?.projects || [])
-      .map(normalizeProject)
-      .sort((a, b) => (b.lastDeployedAt || b.updatedAt || 0) - (a.lastDeployedAt || a.updatedAt || 0));
-
-    return Response.json({
-      projects,
-      teamScoped: Boolean(vercelTeamId()),
-      fetchedAt: Date.now(),
-    });
+    const { projects, teamScoped } = await source.listProjects();
+    return respond(source, { projects, teamScoped, fetchedAt: Date.now() });
   } catch (error) {
-    return errorResponse(error);
+    return respondError(source, error);
   }
 }

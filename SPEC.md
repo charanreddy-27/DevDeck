@@ -1,5 +1,11 @@
 # DevDeck — Full Specification
 
+> **Note:** this is the original v1 spec, kept for history. It no longer describes the app as
+> built. v2.0 moves to Next.js 16 and adds demo mode, an optional password gate (so the "no
+> login screen" non-goal below no longer holds), deploy insights, a command palette, light/dark
+> themes and diff review before commit. See [CHANGELOG.md](CHANGELOG.md) for what changed and
+> [README.md](README.md) for how it works now.
+
 A single-page-app-style Next.js 14 dashboard to monitor and manage all GitHub projects deployed on Vercel.
 
 ## Environment variables (`.env.local`)

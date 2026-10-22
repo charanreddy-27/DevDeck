@@ -1,14 +1,16 @@
 # Screenshots
 
-Drop three captures here, then uncomment the table in the root `README.md`:
+Every image here is a real capture of the app in demo mode (`DEVDECK_DEMO=1 npm run build && npm start`),
+so anyone can reproduce them without an account.
 
-| File | What to capture |
+| File | What it shows |
 |---|---|
-| `dashboard.png` | The project grid with a mix of statuses — at least one green, one amber, one red if you can time it |
-| `logs.png` | A deployment expanded with its build log visible, ideally mid-build so the "live" indicator shows |
-| `editor.png` | The Code tab: file tree on the left, a file open with an unsaved change, commit bar active |
+| `dashboard.png` | The dashboard, dark: insights strip, then the project grid with a building, a failed and several ready projects |
+| `dashboard-light.png` | The same dashboard in the light theme |
+| `palette.png` | The command palette mid-search: a fuzzy match on a project and its live site |
+| `logs.png` | A deployment that is still building, its log live-tailing, with the project's build stats above |
+| `review.png` | The Code tab reviewing an unsaved edit as a unified diff, with the `+/−` count in the commit bar |
+| `mobile.png` | 390px wide: the dashboard in dark next to a project page in light |
 
-A short GIF of the full **edit → commit → build appears** loop is worth more than all three
-stills. `dashboard.gif` if you make one.
-
-Capture at 1440px wide or better, dark theme (the only theme), and crop the browser chrome out.
+Desktop captures are 1440×900 at 2× and saved at 1800px wide. When the UI changes, retake them at
+the same size so the README grid stays even.

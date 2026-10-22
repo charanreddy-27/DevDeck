@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint · test · build · smoke (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # Canary values stand in for the tokens: the smoke step fails if either
+      # one shows up anywhere in the client output.
+      - name: Build
+        run: npm run build
+        env:
+          VERCEL_TOKEN: devdeck-canary-${{ github.run_id }}
+          GITHUB_TOKEN: devdeck-canary-${{ github.run_id }}
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Smoke (no token in the bundle, demo mode, password gate)
+        run: scripts/smoke.sh
+        env:
+          CANARY: devdeck-canary-${{ github.run_id }}
+          NEXT_TELEMETRY_DISABLED: 1

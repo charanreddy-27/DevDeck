@@ -1,7 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { profile, project } from '@/lib/profile';
 
-export const runtime = 'edge';
 export const alt = `${project.name} — ${project.tagline}`;
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
@@ -9,6 +8,10 @@ export const contentType = 'image/png';
 /**
  * Social card, generated at build time. Uses the app's own palette so a shared
  * link looks like the thing it opens. No external fonts — keeps the build hermetic.
+ *
+ * No `runtime = 'edge'`: an edge route can't be prerendered, so the card was
+ * really being rendered on every request. On the default Node.js runtime it
+ * is generated once by `next build` and served as a static file.
  */
 export default function Image() {
   return new ImageResponse(

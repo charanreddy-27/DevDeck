@@ -11,16 +11,21 @@ export default function CommitsTab({ repo, refreshKey }) {
   const [commits, setCommits] = useState(null);
   const [error, setError] = useState(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const params = new URLSearchParams({ owner: repo.owner, repo: repo.name, per_page: '10' });
-      const data = await fetchJson(`/api/github/commits?${params.toString()}`);
-      setCommits(data.commits || []);
-    } catch (err) {
-      setError(err);
-    }
+  const load = useCallback(() => {
+    const params = new URLSearchParams({ owner: repo.owner, repo: repo.name, per_page: '10' });
+    return fetchJson(`/api/github/commits?${params.toString()}`).then(
+      (data) => {
+        setCommits(data.commits || []);
+        setError(null);
+      },
+      (err) => setError(err),
+    );
   }, [repo.owner, repo.name]);
+
+  function retry() {
+    setError(null);
+    load();
+  }
 
   useEffect(() => {
     load();
@@ -43,7 +48,7 @@ export default function CommitsTab({ repo, refreshKey }) {
 
       {error ? (
         <div style={{ padding: 15 }}>
-          <ErrorBanner error={error} onRetry={load} />
+          <ErrorBanner error={error} onRetry={retry} />
         </div>
       ) : null}
 

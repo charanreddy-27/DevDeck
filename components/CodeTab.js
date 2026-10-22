@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import FileTree from './FileTree';
+import DiffView from './DiffView';
+import { diffLines } from '@/lib/diff';
 import ErrorBanner from './ErrorBanner';
 import EmptyState from './EmptyState';
 import { Line } from './Skeletons';
@@ -22,32 +24,52 @@ export default function CodeTab({ repo, onCommitted }) {
   const [draft, setDraft] = useState('');
   const [message, setMessage] = useState('');
   const [committing, setCommitting] = useState(false);
+  // Show the diff instead of the editor: what the commit will change, before it deploys.
+  const [reviewing, setReviewing] = useState(false);
 
   const editorRef = useRef(null);
   const gutterRef = useRef(null);
 
   const dirty = Boolean(file) && !file.binary && draft !== file.content;
 
+  // +/− counts for the commit bar. Deferred so a burst of typing in a large
+  // file never waits on the diff; the counts catch up a frame later.
+  const deferredDraft = useDeferredValue(draft);
+  const changeCount = useMemo(() => {
+    if (!file || file.binary || deferredDraft === file.content) return null;
+    const { added, removed } = diffLines(file.content, deferredDraft);
+    return { added, removed };
+  }, [file, deferredDraft]);
+
   // Read through a ref inside openFile so its identity stays stable across
   // keystrokes — otherwise the memoized file tree would re-render constantly.
   const dirtyRef = useRef(dirty);
-  dirtyRef.current = dirty;
+  useEffect(() => {
+    dirtyRef.current = dirty;
+  }, [dirty]);
 
-  const loadTree = useCallback(async () => {
+  const loadTree = useCallback(
+    () =>
+      fetchJson(`/api/github/tree?owner=${encodeURIComponent(repo.owner)}&repo=${encodeURIComponent(repo.name)}`).then(
+        (data) => {
+          setTree(data);
+          setTreeError(null);
+        },
+        (err) => setTreeError(err),
+      ),
+    [repo.owner, repo.name],
+  );
+
+  function retryTree() {
     setTreeError(null);
-    try {
-      const data = await fetchJson(
-        `/api/github/tree?owner=${encodeURIComponent(repo.owner)}&repo=${encodeURIComponent(repo.name)}`,
-      );
-      setTree(data);
-    } catch (err) {
-      setTreeError(err);
-    }
-  }, [repo.owner, repo.name]);
+    loadTree();
+  }
 
   useEffect(() => {
     loadTree();
   }, [loadTree]);
+
+  const branch = tree?.branch || repo.branch || '';
 
   const openFile = useCallback(
     async (entry) => {
@@ -61,19 +83,20 @@ export default function CodeTab({ repo, onCommitted }) {
           owner: repo.owner,
           repo: repo.name,
           path: entry.path,
-          ref: tree?.branch || repo.branch || '',
+          ref: branch,
         });
         const data = await fetchJson(`/api/github/file?${params.toString()}`);
         setFile(data);
         setDraft(data.content || '');
         setMessage('');
+        setReviewing(false);
       } catch (err) {
         setFileError(err);
       } finally {
         setFileLoading(false);
       }
     },
-    [repo.owner, repo.name, repo.branch, tree?.branch],
+    [repo.owner, repo.name, branch],
   );
 
   // Opening a new file resets the textarea to the top, so the gutter offset
@@ -103,6 +126,7 @@ export default function CodeTab({ repo, onCommitted }) {
       // Adopt the new blob sha so a second edit commits cleanly.
       setFile((current) => (current ? { ...current, content: draft, sha: result.file?.sha || current.sha } : current));
       setMessage('');
+      setReviewing(false);
       toast.success('Committed — Vercel is deploying.', { title: 'Pushed to GitHub' });
       onCommitted?.();
     } catch (err) {
@@ -138,7 +162,7 @@ export default function CodeTab({ repo, onCommitted }) {
   }
 
   if (treeError) {
-    return <ErrorBanner error={treeError} onRetry={loadTree} />;
+    return <ErrorBanner error={treeError} onRetry={retryTree} />;
   }
 
   if (!tree) {
@@ -194,9 +218,26 @@ export default function CodeTab({ repo, onCommitted }) {
             {file ? (
               <>
                 {dirty ? (
-                  <button type="button" className="btn btn-sm" onClick={() => setDraft(file.content)}>
-                    Reset
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      aria-pressed={reviewing}
+                      onClick={() => setReviewing((value) => !value)}
+                    >
+                      {reviewing ? 'Back to editor' : 'Review changes'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        setDraft(file.content);
+                        setReviewing(false);
+                      }}
+                    >
+                      Reset
+                    </button>
+                  </>
                 ) : null}
                 {file.url ? (
                   <a className="link-chip" href={file.url} target="_blank" rel="noreferrer">
@@ -239,7 +280,12 @@ export default function CodeTab({ repo, onCommitted }) {
 
           {file && !file.binary ? (
             <>
-              <div className="editor-wrap">
+              {reviewing && dirty ? (
+                <div className="diff-wrap">
+                  <DiffView before={file.content} after={draft} path={file.path} />
+                </div>
+              ) : null}
+              <div className="editor-wrap" hidden={reviewing && dirty}>
                 <div className="gutter-viewport">
                   <div className="gutter" ref={gutterRef}>
                     {Array.from({ length: lineCount }, (_, index) => (
@@ -284,6 +330,17 @@ export default function CodeTab({ repo, onCommitted }) {
                     'Commit & Deploy'
                   )}
                 </button>
+                {changeCount ? (
+                  <button
+                    type="button"
+                    className="change-count"
+                    onClick={() => setReviewing((value) => !value)}
+                    title={reviewing ? 'Back to the editor' : 'Review what this commit changes'}
+                  >
+                    <span className="diff-add">+{changeCount.added}</span>
+                    <span className="diff-del">−{changeCount.removed}</span>
+                  </button>
+                ) : null}
                 <span className="faint mono" style={{ fontSize: 11 }}>
                   {dirty ? 'commits to ' : 'no changes · '}
                   {dirty ? tree.branch : 'edit to enable'}
